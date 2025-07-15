@@ -3,8 +3,10 @@ import random
 import time
 import asyncio
 import logging
+from datetime import datetime
 from telegram.helpers import escape_markdown
 from dotenv import load_dotenv
+from aiohttp import web
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.error import TimedOut, NetworkError, RetryAfter
 from telegram.ext import (
@@ -17,6 +19,9 @@ from telegram.ext import (
     filters,
     JobQueue
 )
+
+async def healthcheck(request):
+    return web.Response(text="✅ Bot is alive!", status=200)
 
 # Configure logging
 logging.basicConfig(
@@ -531,6 +536,19 @@ def main() -> None:
         job_queue = application.job_queue
         if job_queue:
             job_queue.run_repeating(cleanup_old_trades, interval=3600, first=10)
+            
+        # Add keep-alive endpoint for UptimeRobot
+        async def run_webhook_server():
+            app = web.Application()
+            app.router.add_get("/", healthcheck)
+            runner = web.AppRunner(app)
+            await runner.setup()
+            site = web.TCPSite(runner, "0.0.0.0", 8080)  # You can use any port Render exposes
+            await site.start()
+            logger.info("UptimeRobot ping server started on port 8080")
+
+        # Schedule webhook server
+        application.create_task(run_webhook_server())
         
         logger.info("Bot starting with enhanced timeout handling...")
         application.run_polling(
