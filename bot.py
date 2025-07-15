@@ -3,6 +3,7 @@ import random
 import time
 import asyncio
 import logging
+from telegram.helpers import escape_markdown
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.error import TimedOut, NetworkError, RetryAfter
@@ -315,31 +316,55 @@ async def confirm_trade(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return AWAIT_APPROVAL
 
 async def send_payment_instructions_to_buyer(context: ContextTypes.DEFAULT_TYPE, trade_id: str):
-    """Send payment instructions ONLY to buyer immediately after their approval."""
+    """Send payment instructions with proper Markdown escaping"""
     trade = trade_data[trade_id]
-    wallet_address = WALLETS[trade['crypto']]
     
+    # Get and properly escape the wallet address
+    raw_address = WALLETS[trade['crypto']]
+    escaped_address = escape_markdown(raw_address, version=2)
+    
+    # Build the message with safe formatting
     message = (
-        f"━━━━⍟Crypto Trades⍟━━━━\n\n💰 Ready to Pay for Trade {trade_id} 💰\n\n"
-        f"Please send {trade['total']:.8f} {trade['crypto']} to:\n"
-        f"`{wallet_address}`\n\n"
-        f"Seller: @outtathemud\n"
-        f"Details: {trade['details']}\n\n"
-        "⚠️ Funds will be held in escrow until the seller approves.\n"
-        "You'll get a confirmation when payment is received.\n"
-        "*NOTE*: If sending from an Exchange, be sure to withdraw this amount *plus Exchange's fee*\n\n"
-        "*Funds have yet to be deposited in escrow wallet, make sure to deposit before clicking on the Payment Sent button*"
+        f"━━━━⍟ Crypto Trades ⍟━━━━\n\n"
+        f"💰 *Payment Instructions for Trade {trade_id}* 💰\n\n"
+        f"Please send *{trade['total']:.8f} {trade['crypto']}* to:\n"
+        f"`{escaped_address}`\n\n"
+        f"*Seller:* @{escape_markdown(trade.get('partner_name', 'pending approval'), version=2)}\n"
+        f"*Details:* {escape_markdown(trade['details'], version=2)}\n\n"
+        "⚠️ *Important Notes:*\n"
+        "• Funds will be held in escrow\n"
+        "• Include network fees if sending from exchange\n"
+        "• Click ✅ Payment Sent only after sending"
     )
     
     keyboard = [[InlineKeyboardButton("✅ Payment Sent", callback_data=f'sent_{trade_id}')]]
     
-    await safe_send_message(
-        context,
-        trade['user_id'],
-        message,
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode='Markdown'
-    )
+    # Send with error handling
+    try:
+        await context.bot.send_message(
+            chat_id=trade['user_id'],
+            text=message,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='MarkdownV2'
+        )
+    except Exception as e:
+        logger.error(f"Markdown send failed, trying plain text: {e}")
+        # Fallback to plain text
+        await context.bot.send_message(
+            chat_id=trade['user_id'],
+            text=(
+                f"━━━━⍟ Crypto Trades ⍟━━━━\n\nPayment Instructions for Trade {trade_id}\n\n"
+                f"Send {trade['total']:.8f} {trade['crypto']} to:\n"
+                f"{raw_address}\n\n"
+                f"Seller: @mr_futurefx\n"
+                f"Details: {trade['details']}\n"
+                "⚠️ *Important Notes:*\n"
+                "• Funds will be held in escrow\n"
+                "• Include network fees if sending from exchange\n"
+                "• Click ✅ Payment Sent only after sending"
+            ),
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
     
 async def notify_seller_payment_pending(context: ContextTypes.DEFAULT_TYPE, trade_id: str):
     """Notify seller that buyer has payment instructions and trade is fully approved."""
