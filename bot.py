@@ -361,7 +361,7 @@ async def send_payment_instructions_to_buyer(context: ContextTypes.DEFAULT_TYPE,
                 f"━━━━⍟ Crypto Trades ⍟━━━━\n\nPayment Instructions for Trade {trade_id}\n\n"
                 f"Send {trade['total']:.8f} {trade['crypto']} to:\n"
                 f"{raw_address}\n\n"
-                f"Seller: @mr_futurefx\n"
+                f"Seller: \n"
                 f"Details: {trade['details']}\n"
                 "⚠️ *Important Notes:*\n"
                 "• Funds will be held in escrow\n"
@@ -537,18 +537,6 @@ def main() -> None:
         if job_queue:
             job_queue.run_repeating(cleanup_old_trades, interval=3600, first=10)
             
-        # Add keep-alive endpoint for UptimeRobot
-        async def run_webhook_server():
-            app = web.Application()
-            app.router.add_get("/", healthcheck)
-            runner = web.AppRunner(app)
-            await runner.setup()
-            site = web.TCPSite(runner, "0.0.0.0", 8080)  # You can use any port Render exposes
-            await site.start()
-            logger.info("UptimeRobot ping server started on port 8080")
-
-        # Schedule webhook server
-        application.create_task(run_webhook_server())
         
         logger.info("Bot starting with enhanced timeout handling...")
         application.run_polling(
